@@ -1,0 +1,6 @@
+{
+  "name": "TRIZENMART",
+  "description": "Shop smarter. Shop with TRIZENMART — Premium Ecommerce Storefront & Management with Cash on Delivery, WhatsApp Ordering, and complete admin suite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
