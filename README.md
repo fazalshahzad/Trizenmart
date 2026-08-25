@@ -234,7 +234,23 @@ TRIZENMART provides flexible, zero-cost database options depending on whether yo
 
 ---
 
-### Option 2: Google Firebase Firestore (Spark Free Plan)
+### Option 2: MongoDB Atlas Cloud (Free M0 Cluster)
+
+**Cost**: `$0.00 / month forever` | **Limits**: `512MB free storage, automated backups, global cluster`
+
+1. Go to [MongoDB Atlas](https://www.mongodb.com/atlas/database) and sign up for a free account.
+2. Create a free **M0 Cluster** (Shared free tier).
+3. Under **Security → Database Access**, create a database user and password.
+4. Under **Network Access**, add IP `0.0.0.0/0` (Allow Access from Anywhere, required for cloud edge hosting like Vercel).
+5. Click **Connect** → **Drivers (Node.js)** and copy your connection string:
+   ```env
+   MONGODB_URI="mongodb+srv://shancompany322_db_user:YOUR_PASSWORD@cluster0.kbzjed9.mongodb.net/trizenmart?retryWrites=true&w=majority"
+   ```
+6. Paste the connection URI into your `.env` file (and in **Vercel Settings → Environment Variables** when deploying).
+
+---
+
+### Option 3: Google Firebase Firestore (Spark Free Plan)
 
 **Cost**: `$0.00 / month forever` | **Limits**: `50,000 reads/day, 20,000 writes/day, 1GB storage`
 
@@ -426,6 +442,9 @@ You can link your own domain (e.g. `trizenmart.pk` or `trizenmart.com`) to Verce
 Copy `.env.example` to create your local `.env`:
 
 ```env
+# MongoDB Atlas Database URI (Cloud Database Free Tier)
+MONGODB_URI="mongodb+srv://shancompany322_db_user:YOUR_PASSWORD@cluster0.kbzjed9.mongodb.net/trizenmart?retryWrites=true&w=majority"
+
 # Optional Application URL (auto-detected on Vercel)
 VITE_APP_URL="https://trizenmart.vercel.app"
 
