@@ -164,6 +164,7 @@ export interface SecurityAuditLog {
 }
 
 export interface AdminSecurityConfig {
+  adminEmail: string;
   adminPin: string;
   adminPasswordHash: string;
   requireTwoFactorPin: boolean;

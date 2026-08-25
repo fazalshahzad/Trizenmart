@@ -36,7 +36,8 @@ export const Header: React.FC = () => {
     products,
     setSelectedProduct,
     compareList,
-    setIsCompareModalOpen
+    setIsCompareModalOpen,
+    isAdminAuthenticated
   } = useStore();
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -268,21 +269,23 @@ export const Header: React.FC = () => {
               </div>
             </button>
 
-            {/* Admin Dashboard Switcher Badge */}
-            <button
-              type="button"
-              onClick={() => setActiveView(activeView === 'admin' ? 'home' : 'admin')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
-                activeView === 'admin'
-                  ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                  : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50'
-              }`}
-              title="Toggle TRIZENMART Admin Management"
-              id="header-admin-toggle-btn"
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              <span className="hidden xl:inline">{activeView === 'admin' ? 'Exit Admin' : 'Admin Panel'}</span>
-            </button>
+            {/* Admin Dashboard Switcher Badge (Visible only to authorized admin or in admin view) */}
+            {(isAdminAuthenticated || activeView === 'admin') && (
+              <button
+                type="button"
+                onClick={() => setActiveView(activeView === 'admin' ? 'home' : 'admin')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                  activeView === 'admin'
+                    ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                    : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                }`}
+                title="Toggle TRIZENMART Admin Management"
+                id="header-admin-toggle-btn"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                <span className="hidden xl:inline">{activeView === 'admin' ? 'Exit Admin' : 'Admin Console'}</span>
+              </button>
+            )}
 
             {/* Mobile Menu Trigger */}
             <button
@@ -533,16 +536,19 @@ export const Header: React.FC = () => {
             >
               Customer Account & Orders
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveView('admin');
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 text-sm font-bold text-purple-700 bg-purple-50 rounded-lg"
-            >
-              Admin Dashboard & Settings
-            </button>
+            {(isAdminAuthenticated || activeView === 'admin') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveView('admin');
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full text-left px-3 py-2 text-sm font-bold text-purple-700 bg-purple-50 rounded-lg flex items-center justify-between"
+              >
+                <span>Admin Management Portal</span>
+                <LayoutDashboard className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           <div className="border-t border-slate-100 pt-3">

@@ -8,7 +8,8 @@ import {
   Truck, 
   RotateCcw, 
   CreditCard,
-  Heart
+  Heart,
+  Lock
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 
@@ -254,10 +255,16 @@ export const Footer: React.FC = () => {
             <span>•</span>
             <button 
               type="button" 
-              onClick={() => setActiveView('admin')} 
-              className="text-purple-400 hover:text-purple-300 font-semibold transition-colors"
+              onClick={() => {
+                setActiveView('admin');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }} 
+              className="text-slate-500 hover:text-slate-300 font-medium transition-colors flex items-center gap-1 text-[11px]"
+              title="Restricted Staff & Admin Portal"
+              id="footer-staff-portal-btn"
             >
-              Admin Dashboard
+              <Lock className="w-3 h-3 text-slate-500" />
+              <span>Staff Portal</span>
             </button>
           </div>
         </div>

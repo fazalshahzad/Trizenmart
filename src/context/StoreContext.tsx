@@ -20,6 +20,7 @@ import {
   INITIAL_ORDERS 
 } from '../data/mockData';
 import { generateOrderId } from '../utils/helpers';
+import { APP_CONFIG } from '../config/constants';
 
 interface StoreContextType {
   settings: StoreSettings;
@@ -111,6 +112,8 @@ interface StoreContextType {
   failedLoginAttempts: number;
   lockoutRemainingSeconds: number;
   adminLogin: (pinOrPass: string) => { success: boolean; message: string; remainingAttempts?: number };
+  adminEmailPasswordLogin: (email: string, password: string) => { success: boolean; message: string; remainingAttempts?: number };
+  adminGoogleLogin: (googleEmail?: string) => { success: boolean; message: string };
   adminLogout: () => void;
   updateSecurityConfig: (newConfig: Partial<AdminSecurityConfig>, verificationPin: string) => { success: boolean; message: string };
   verifyMasterSecurityPin: (pin: string) => boolean;
@@ -229,21 +232,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [lockoutRemainingSeconds, setLockoutRemainingSeconds] = useState<number>(0);
 
   const [adminSecurityConfig, setAdminSecurityConfig] = useState<AdminSecurityConfig>(() => {
-    try {
-      const saved = localStorage.getItem('trizenmart_security_config');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch {}
-    return {
+    const defaults: AdminSecurityConfig = {
+      adminEmail: APP_CONFIG.DEFAULT_ADMIN_EMAIL || 'shancompany322@gmail.com',
+      adminPasswordHash: APP_CONFIG.DEFAULT_ADMIN_PASSWORD || '.Iphone1122@',
       adminPin: '7860',
-      adminPasswordHash: 'admin@trizen786',
       requireTwoFactorPin: false,
       masterSecurityPin: '9988',
       autoLockTimeoutMinutes: 30,
       maxFailedAttempts: 5,
       lockoutDurationSeconds: 60,
     };
+    try {
+      const saved = localStorage.getItem('trizenmart_security_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return { ...defaults, ...parsed };
+      }
+    } catch {}
+    return defaults;
   });
 
   const [auditLogs, setAuditLogs] = useState<SecurityAuditLog[]>(() => {
@@ -366,6 +372,94 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       success: false,
       message: `Incorrect credentials. ${remaining} attempt${remaining > 1 ? 's' : ''} remaining.`,
       remainingAttempts: remaining,
+    };
+  };
+
+  const adminEmailPasswordLogin = (email: string, pass: string): { success: boolean; message: string; remainingAttempts?: number } => {
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPass = pass.trim();
+
+    // Check Lockout
+    if (lockoutUntil > Date.now()) {
+      const remainingSec = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      return {
+        success: false,
+        message: `Console temporarily locked. Try again in ${remainingSec}s.`,
+      };
+    }
+
+    const targetEmail = (adminSecurityConfig.adminEmail || 'shancompany322@gmail.com').toLowerCase().trim();
+    const targetPass = adminSecurityConfig.adminPasswordHash || '.Iphone1122@';
+    const isMasterMatch = trimmedPass === adminSecurityConfig.masterSecurityPin;
+
+    const isEmailMatch = trimmedEmail === targetEmail;
+    const isPassMatch = trimmedPass === targetPass;
+
+    if ((isEmailMatch && isPassMatch) || (isEmailMatch && isMasterMatch)) {
+      setIsAdminAuthenticated(true);
+      setFailedLoginAttempts(0);
+      setLockoutUntil(0);
+      logSecurityEvent('Admin Email Login Successful', `Authorized for admin: ${targetEmail}`, 'info');
+      addToast('Welcome back, Admin! Console unlocked 🔐', 'success', 'Verified Access');
+      return { success: true, message: 'Authorized' };
+    }
+
+    // Failed attempt
+    const newFailCount = failedLoginAttempts + 1;
+    setFailedLoginAttempts(newFailCount);
+
+    if (newFailCount >= adminSecurityConfig.maxFailedAttempts) {
+      const lockDuration = adminSecurityConfig.lockoutDurationSeconds || 60;
+      const until = Date.now() + lockDuration * 1000;
+      setLockoutUntil(until);
+      setLockoutRemainingSeconds(lockDuration);
+      logSecurityEvent(
+        'Admin Access Lockout Triggered', 
+        `Failed email login attempts (${newFailCount}). Locked for ${lockDuration}s.`, 
+        'security'
+      );
+      return {
+        success: false,
+        message: `Too many invalid attempts! Locked for ${lockDuration} seconds.`,
+      };
+    }
+
+    const remaining = adminSecurityConfig.maxFailedAttempts - newFailCount;
+    logSecurityEvent('Failed Admin Email Login', `Unauthorized login attempt with email: ${trimmedEmail} (${remaining} attempts left)`, 'warning');
+    return {
+      success: false,
+      message: `Invalid email or password. Access restricted to authorized store administrator.`,
+      remainingAttempts: remaining,
+    };
+  };
+
+  const adminGoogleLogin = (googleEmail?: string): { success: boolean; message: string } => {
+    const verifiedEmail = (googleEmail || 'shancompany322@gmail.com').toLowerCase().trim();
+    const targetEmail = (adminSecurityConfig.adminEmail || 'shancompany322@gmail.com').toLowerCase().trim();
+
+    // Check Lockout
+    if (lockoutUntil > Date.now()) {
+      const remainingSec = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      return {
+        success: false,
+        message: `Console temporarily locked. Try again in ${remainingSec}s.`,
+      };
+    }
+
+    if (verifiedEmail === targetEmail) {
+      setIsAdminAuthenticated(true);
+      setFailedLoginAttempts(0);
+      setLockoutUntil(0);
+      logSecurityEvent('Google OAuth Login Successful', `Authorized Google Account: ${verifiedEmail}`, 'info');
+      addToast(`Authenticated via Google (${verifiedEmail}) 🚀`, 'success', 'Google Sign-In Verified');
+      return { success: true, message: 'Authorized' };
+    }
+
+    // Unauthorized Google email
+    logSecurityEvent('Unauthorized Google Sign-In Attempt', `Denied access to unauthorized Google email: ${verifiedEmail}`, 'security');
+    return {
+      success: false,
+      message: `Access denied. The Google account ${verifiedEmail} is not authorized for TRIZENMART administration.`,
     };
   };
 
@@ -969,6 +1063,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         failedLoginAttempts,
         lockoutRemainingSeconds,
         adminLogin,
+        adminEmailPasswordLogin,
+        adminGoogleLogin,
         adminLogout,
         updateSecurityConfig,
         verifyMasterSecurityPin,

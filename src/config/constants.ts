@@ -9,6 +9,8 @@ export const APP_CONFIG = {
   DEFAULT_WHATSAPP_NUMBER: '+92 300 1234567',
   DEFAULT_ADMIN_PIN: '7860',
   DEFAULT_MASTER_PIN: '9988',
+  DEFAULT_ADMIN_EMAIL: 'shancompany322@gmail.com',
+  DEFAULT_ADMIN_PASSWORD: '.Iphone1122@',
   STORAGE_KEYS: {
     PRODUCTS: 'trizenmart_products',
     ORDERS: 'trizenmart_orders',

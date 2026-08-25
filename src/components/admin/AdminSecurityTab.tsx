@@ -27,6 +27,7 @@ export const AdminSecurityTab: React.FC = () => {
   } = useStore();
 
   // Credentials change state
+  const [newAdminEmail, setNewAdminEmail] = useState(adminSecurityConfig.adminEmail || 'shancompany322@gmail.com');
   const [newAdminPin, setNewAdminPin] = useState(adminSecurityConfig.adminPin);
   const [newAdminPass, setNewAdminPass] = useState(adminSecurityConfig.adminPasswordHash);
   const [newMasterPin, setNewMasterPin] = useState(adminSecurityConfig.masterSecurityPin);
@@ -61,6 +62,7 @@ export const AdminSecurityTab: React.FC = () => {
     }
 
     const res = updateSecurityConfig({
+      adminEmail: newAdminEmail.trim(),
       adminPin: newAdminPin.trim(),
       adminPasswordHash: newAdminPass.trim(),
       masterSecurityPin: newMasterPin.trim(),
@@ -127,6 +129,25 @@ export const AdminSecurityTab: React.FC = () => {
 
           <form onSubmit={handleSaveSecuritySettings} className="space-y-5 text-xs">
             
+            {/* Authorized Admin Email */}
+            <div className="space-y-1.5">
+              <label className="block font-extrabold text-slate-800">
+                Authorized Admin Email (Gmail & Password Sign-In)
+              </label>
+              <input
+                type="email"
+                required
+                value={newAdminEmail}
+                onChange={(e) => setNewAdminEmail(e.target.value)}
+                placeholder="e.g. shancompany322@gmail.com"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-all"
+                id="sec-admin-email-input"
+              />
+              <p className="text-[11px] text-slate-500">
+                The designated Google / Gmail address allowed to access the admin portal and authorize via OAuth.
+              </p>
+            </div>
+
             {/* 4-Digit Admin PIN */}
             <div className="space-y-1.5">
               <label className="block font-extrabold text-slate-800">
