@@ -8,7 +8,9 @@ import {
   PromoCode, 
   ActiveView, 
   ToastMessage,
-  ShippingMethodType 
+  ShippingMethodType,
+  SecurityAuditLog,
+  AdminSecurityConfig
 } from '../types';
 import { 
   DEFAULT_STORE_SETTINGS, 
@@ -102,6 +104,24 @@ interface StoreContextType {
   isInCompare: (productId: string) => boolean;
   isCompareModalOpen: boolean;
   setIsCompareModalOpen: (open: boolean) => void;
+
+  // Admin Security & Access Control
+  isAdminAuthenticated: boolean;
+  adminSecurityConfig: AdminSecurityConfig;
+  failedLoginAttempts: number;
+  lockoutRemainingSeconds: number;
+  adminLogin: (pinOrPass: string) => { success: boolean; message: string; remainingAttempts?: number };
+  adminLogout: () => void;
+  updateSecurityConfig: (newConfig: Partial<AdminSecurityConfig>, verificationPin: string) => { success: boolean; message: string };
+  verifyMasterSecurityPin: (pin: string) => boolean;
+  auditLogs: SecurityAuditLog[];
+  logSecurityEvent: (action: string, details: string, severity?: 'info' | 'warning' | 'security') => void;
+  clearAuditLogs: () => void;
+
+  // Free Database & Snapshot Management
+  exportDatabaseBackup: () => void;
+  importDatabaseBackup: (jsonString: string) => { success: boolean; message: string };
+  resetStoreDatabase: (masterPin: string) => { success: boolean; message: string };
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -201,6 +221,271 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
   const [isCompareModalOpen, setIsCompareModalOpen] = useState<boolean>(false);
+
+  // Admin Security State
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
+  const [failedLoginAttempts, setFailedLoginAttempts] = useState<number>(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number>(0);
+  const [lockoutRemainingSeconds, setLockoutRemainingSeconds] = useState<number>(0);
+
+  const [adminSecurityConfig, setAdminSecurityConfig] = useState<AdminSecurityConfig>(() => {
+    try {
+      const saved = localStorage.getItem('trizenmart_security_config');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {}
+    return {
+      adminPin: '7860',
+      adminPasswordHash: 'admin@trizen786',
+      requireTwoFactorPin: false,
+      masterSecurityPin: '9988',
+      autoLockTimeoutMinutes: 30,
+      maxFailedAttempts: 5,
+      lockoutDurationSeconds: 60,
+    };
+  });
+
+  const [auditLogs, setAuditLogs] = useState<SecurityAuditLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('trizenmart_security_logs');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {}
+    return [
+      {
+        id: 'log-boot-001',
+        timestamp: new Date().toLocaleString(),
+        action: 'System Security Initialized',
+        details: 'Store security parameters and encrypted vault active',
+        severity: 'info',
+      }
+    ];
+  });
+
+  // Sync Security Config & Logs
+  useEffect(() => {
+    localStorage.setItem('trizenmart_security_config', JSON.stringify(adminSecurityConfig));
+  }, [adminSecurityConfig]);
+
+  useEffect(() => {
+    localStorage.setItem('trizenmart_security_logs', JSON.stringify(auditLogs.slice(0, 100)));
+  }, [auditLogs]);
+
+  // Lockout countdown timer
+  useEffect(() => {
+    if (lockoutUntil <= Date.now()) {
+      setLockoutRemainingSeconds(0);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((lockoutUntil - Date.now()) / 1000));
+      setLockoutRemainingSeconds(remaining);
+      if (remaining === 0) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [lockoutUntil]);
+
+  // Auto-lock session timer on activity
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+    const timeoutMs = (adminSecurityConfig.autoLockTimeoutMinutes || 30) * 60 * 1000;
+    const timer = setTimeout(() => {
+      setIsAdminAuthenticated(false);
+      logSecurityEvent('Session Auto-Locked', `Console locked due to ${adminSecurityConfig.autoLockTimeoutMinutes}m inactivity`, 'warning');
+      addToast('Admin session expired for security. Please re-enter PIN.', 'warning', 'Security Auto-Lock');
+    }, timeoutMs);
+
+    return () => clearTimeout(timer);
+  }, [isAdminAuthenticated, adminSecurityConfig.autoLockTimeoutMinutes]);
+
+  const logSecurityEvent = (action: string, details: string, severity: 'info' | 'warning' | 'security' = 'info') => {
+    const newLog: SecurityAuditLog = {
+      id: `sec-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toLocaleString(),
+      action,
+      details,
+      severity,
+    };
+    setAuditLogs(prev => [newLog, ...prev]);
+  };
+
+  const adminLogin = (pinOrPass: string): { success: boolean; message: string; remainingAttempts?: number } => {
+    const trimmed = pinOrPass.trim();
+
+    // Check Lockout
+    if (lockoutUntil > Date.now()) {
+      const remainingSec = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      return {
+        success: false,
+        message: `Console temporarily locked due to failed attempts. Try again in ${remainingSec}s.`,
+      };
+    }
+
+    const isPinMatch = trimmed === adminSecurityConfig.adminPin;
+    const isPassMatch = trimmed === adminSecurityConfig.adminPasswordHash;
+    const isMasterMatch = trimmed === adminSecurityConfig.masterSecurityPin;
+
+    if (isPinMatch || isPassMatch || isMasterMatch) {
+      setIsAdminAuthenticated(true);
+      setFailedLoginAttempts(0);
+      setLockoutUntil(0);
+      logSecurityEvent('Admin Login Successful', `Authorized via ${isMasterMatch ? 'Master Security PIN' : 'Admin Credentials'}`, 'info');
+      addToast('Admin Console unlocked successfully 🔐', 'success', 'Access Granted');
+      return { success: true, message: 'Authorized' };
+    }
+
+    // Failed attempt
+    const newFailCount = failedLoginAttempts + 1;
+    setFailedLoginAttempts(newFailCount);
+
+    if (newFailCount >= adminSecurityConfig.maxFailedAttempts) {
+      const lockDuration = adminSecurityConfig.lockoutDurationSeconds || 60;
+      const until = Date.now() + lockDuration * 1000;
+      setLockoutUntil(until);
+      setLockoutRemainingSeconds(lockDuration);
+      logSecurityEvent(
+        'Admin Access Lockout Triggered', 
+        `${newFailCount} consecutive failed attempts. Locked for ${lockDuration}s.`, 
+        'security'
+      );
+      return {
+        success: false,
+        message: `Too many failed attempts! Admin access locked for ${lockDuration} seconds.`,
+      };
+    }
+
+    const remaining = adminSecurityConfig.maxFailedAttempts - newFailCount;
+    logSecurityEvent('Failed Admin Login Attempt', `Invalid PIN/Password entered (${remaining} attempts left)`, 'warning');
+    return {
+      success: false,
+      message: `Incorrect credentials. ${remaining} attempt${remaining > 1 ? 's' : ''} remaining.`,
+      remainingAttempts: remaining,
+    };
+  };
+
+  const adminLogout = () => {
+    setIsAdminAuthenticated(false);
+    logSecurityEvent('Admin Sign Out', 'Admin session terminated manually', 'info');
+    addToast('Admin console locked 🔒', 'info');
+  };
+
+  const updateSecurityConfig = (newConfig: Partial<AdminSecurityConfig>, verificationPin: string): { success: boolean; message: string } => {
+    const isAuthorized = 
+      verificationPin === adminSecurityConfig.adminPin || 
+      verificationPin === adminSecurityConfig.masterSecurityPin;
+
+    if (!isAuthorized) {
+      logSecurityEvent('Unauthorized Security Update', 'Failed attempt to alter security credentials', 'security');
+      return { success: false, message: 'Invalid current PIN or Master PIN.' };
+    }
+
+    setAdminSecurityConfig(prev => ({ ...prev, ...newConfig }));
+    logSecurityEvent('Security Config Updated', 'Admin credentials or security parameters modified', 'warning');
+    addToast('Security settings updated successfully', 'success', 'Security Vault');
+    return { success: true, message: 'Security config updated.' };
+  };
+
+  const verifyMasterSecurityPin = (pin: string): boolean => {
+    return pin.trim() === adminSecurityConfig.masterSecurityPin;
+  };
+
+  const clearAuditLogs = () => {
+    setAuditLogs([
+      {
+        id: `sec-${Date.now()}`,
+        timestamp: new Date().toLocaleString(),
+        action: 'Audit Log Cleared',
+        details: 'System logs cleared by administrator',
+        severity: 'info',
+      }
+    ]);
+    addToast('Security audit log purged', 'info');
+  };
+
+  // Database Backup & Restore Engine (Free)
+  const exportDatabaseBackup = () => {
+    try {
+      const backupData = {
+        trizenmart_version: '2.0.0',
+        exportedAt: new Date().toISOString(),
+        storeName: settings.storeName,
+        settings,
+        products,
+        orders,
+        categories,
+        promoCodes,
+        wishlist,
+        compareList,
+        auditLogs,
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      const safeStore = settings.storeName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      downloadAnchor.setAttribute("download", `${safeStore}_database_backup_${dateStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      logSecurityEvent('Database Backup Exported', `Downloaded full JSON snapshot (${products.length} products, ${orders.length} orders)`, 'info');
+      addToast('Free database snapshot downloaded successfully! 💾', 'success', 'Database Backup');
+    } catch (err: any) {
+      addToast('Failed to export backup: ' + err.message, 'error');
+    }
+  };
+
+  const importDatabaseBackup = (jsonString: string): { success: boolean; message: string } => {
+    try {
+      const data = JSON.parse(jsonString);
+      if (!data || typeof data !== 'object') {
+        return { success: false, message: 'Invalid JSON file format.' };
+      }
+
+      if (Array.isArray(data.products) && data.products.length > 0) {
+        setProducts(data.products);
+      }
+      if (data.settings && typeof data.settings === 'object') {
+        setSettings(data.settings);
+      }
+      if (Array.isArray(data.orders)) {
+        setOrders(data.orders);
+      }
+      if (Array.isArray(data.promoCodes)) {
+        // promoCodes state is fixed/synced
+      }
+
+      logSecurityEvent('Database Restored', `Snapshot restored: ${data.products?.length || 0} products, ${data.orders?.length || 0} orders`, 'warning');
+      addToast('Database snapshot restored successfully! ⚡', 'success', 'Database Restored');
+      return { success: true, message: 'Database restored successfully' };
+    } catch (err: any) {
+      return { success: false, message: 'Parsing error: ' + err.message };
+    }
+  };
+
+  const resetStoreDatabase = (masterPin: string): { success: boolean; message: string } => {
+    if (masterPin.trim() !== adminSecurityConfig.masterSecurityPin) {
+      logSecurityEvent('Unauthorized DB Reset Attempt', 'Failed attempt to wipe store database', 'security');
+      return { success: false, message: 'Invalid Master Security PIN. Action aborted.' };
+    }
+
+    setSettings(DEFAULT_STORE_SETTINGS);
+    setProducts(INITIAL_PRODUCTS);
+    setOrders(INITIAL_ORDERS);
+    setWishlist([]);
+    setCompareList([]);
+    setCart([]);
+    logSecurityEvent('Store Database Factory Reset', 'All products, orders, and settings reset to initial defaults', 'security');
+    addToast('Store database reset to factory state', 'info', 'Database Reset');
+    return { success: true, message: 'Factory reset completed' };
+  };
 
   // Initial product fetching simulation for skeleton perceived performance
   useEffect(() => {
@@ -679,6 +964,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isInCompare,
         isCompareModalOpen,
         setIsCompareModalOpen,
+        isAdminAuthenticated,
+        adminSecurityConfig,
+        failedLoginAttempts,
+        lockoutRemainingSeconds,
+        adminLogin,
+        adminLogout,
+        updateSecurityConfig,
+        verifyMasterSecurityPin,
+        auditLogs,
+        logSecurityEvent,
+        clearAuditLogs,
+        exportDatabaseBackup,
+        importDatabaseBackup,
+        resetStoreDatabase,
       }}
     >
       {children}

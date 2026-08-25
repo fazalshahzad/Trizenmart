@@ -20,11 +20,19 @@ import {
   Save,
   RefreshCw,
   Search,
-  ExternalLink
+  ExternalLink,
+  ShieldCheck,
+  Database,
+  Lock,
+  LogOut,
+  Download
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { formatPrice, createWhatsAppOrderUpdateLink } from '../utils/helpers';
 import { Order, Product, StoreSettings } from '../types';
+import { AdminLoginGate } from './admin/AdminLoginGate';
+import { AdminSecurityTab } from './admin/AdminSecurityTab';
+import { AdminDatabaseHostingTab } from './admin/AdminDatabaseHostingTab';
 
 export const AdminDashboard: React.FC = () => {
   const { 
@@ -40,10 +48,13 @@ export const AdminDashboard: React.FC = () => {
     categories, 
     addToast,
     setActiveView,
-    setSelectedOrder
+    setSelectedOrder,
+    isAdminAuthenticated,
+    adminLogout,
+    exportDatabaseBackup,
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'orders' | 'products' | 'settings' | 'templates'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'orders' | 'products' | 'settings' | 'templates' | 'security' | 'database'>('overview');
   
   // Settings Form State
   const [settingsForm, setSettingsForm] = useState<StoreSettings>(settings);
@@ -67,6 +78,11 @@ export const AdminDashboard: React.FC = () => {
     isFlashDeal: false,
     badge: 'New Arrival',
   });
+
+  // If admin is not logged in with PIN, show security gate
+  if (!isAdminAuthenticated) {
+    return <AdminLoginGate />;
+  }
 
   // Orders Filter State
   const [orderSearch, setOrderSearch] = useState('');
@@ -208,7 +224,18 @@ export const AdminDashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={exportDatabaseBackup}
+            className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+            id="admin-top-db-export-btn"
+            title="Download full JSON snapshot of store data"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Backup DB</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveView('home')}
@@ -223,20 +250,31 @@ export const AdminDashboard: React.FC = () => {
               setEditingProductId(null);
               setIsAddProductOpen(true);
             }}
-            className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 transition-all"
+            className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add Product</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={adminLogout}
+            className="px-3.5 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-bold rounded-xl border border-rose-500/40 transition-colors flex items-center gap-1.5 cursor-pointer"
+            id="admin-logout-btn"
+            title="Lock administrative console"
+          >
+            <Lock className="w-3.5 h-3.5 text-rose-400" />
+            <span>Lock Console</span>
           </button>
         </div>
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex border-b border-slate-200 overflow-x-auto space-x-2 text-xs font-bold">
+      <div className="flex border-b border-slate-200 overflow-x-auto space-x-2 text-xs font-bold pb-px">
         <button
           type="button"
           onClick={() => setActiveTab('overview')}
-          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'overview'
               ? 'border-purple-600 text-purple-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
@@ -249,7 +287,7 @@ export const AdminDashboard: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('orders')}
-          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'orders'
               ? 'border-purple-600 text-purple-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
@@ -262,7 +300,7 @@ export const AdminDashboard: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('products')}
-          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'products'
               ? 'border-purple-600 text-purple-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
@@ -275,7 +313,7 @@ export const AdminDashboard: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('settings')}
-          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'settings'
               ? 'border-purple-600 text-purple-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
@@ -287,15 +325,43 @@ export const AdminDashboard: React.FC = () => {
 
         <button
           type="button"
+          onClick={() => setActiveTab('security')}
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+            activeTab === 'security'
+              ? 'border-emerald-600 text-emerald-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+          id="admin-tab-security-btn"
+        >
+          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+          <span>Security & Access Control</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('database')}
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+            activeTab === 'database'
+              ? 'border-emerald-600 text-emerald-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+          id="admin-tab-database-btn"
+        >
+          <Database className="w-4 h-4 text-emerald-600" />
+          <span>Free Database & Vercel Hosting</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('templates')}
-          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 px-4 flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'templates'
               ? 'border-purple-600 text-purple-700'
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
           <MessageSquare className="w-4 h-4" />
-          <span>WhatsApp & Email Templates</span>
+          <span>WhatsApp & Invoice Templates</span>
         </button>
       </div>
 
@@ -884,6 +950,16 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
         </div>
+      )}
+
+      {/* TAB 6: SECURITY & ACCESS CONTROL */}
+      {activeTab === 'security' && (
+        <AdminSecurityTab />
+      )}
+
+      {/* TAB 7: FREE DATABASE & VERCEL HOSTING */}
+      {activeTab === 'database' && (
+        <AdminDatabaseHostingTab />
       )}
 
       {/* Add / Edit Product Modal */}

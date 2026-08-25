@@ -153,3 +153,23 @@ export interface ToastMessage {
   message: string;
   title?: string;
 }
+
+export interface SecurityAuditLog {
+  id: string;
+  timestamp: string;
+  action: string;
+  details: string;
+  severity: 'info' | 'warning' | 'security';
+  ipAddress?: string;
+}
+
+export interface AdminSecurityConfig {
+  adminPin: string;
+  adminPasswordHash: string;
+  requireTwoFactorPin: boolean;
+  masterSecurityPin: string;
+  autoLockTimeoutMinutes: number; // e.g. 15, 30, 60
+  maxFailedAttempts: number; // e.g. 5
+  lockoutDurationSeconds: number; // e.g. 60
+}
+
